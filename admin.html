@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>KAMBUS</title>
     <meta name="theme-color" content="#173541">
     <meta name="description" content="KAMBUS, live bus tracking for KITSW.">
@@ -146,6 +146,27 @@
                 transform: translateX(0);
             }
         }
+
+        /* ---- Desktop web build: this site now only runs in a browser on a
+           laptop/monitor, never a phone WebView, so give it real screen
+           real estate instead of staying capped at the old 1280px mobile-app
+           container width. Pure CSS overrides (not new Tailwind utility
+           classes) so they work regardless of how kambus.css was purged. ---- */
+        @media (min-width: 1280px) {
+            #appShell {
+                max-width: 1600px;
+            }
+        }
+        @media (min-width: 1600px) {
+            #appShell {
+                max-width: 1880px;
+            }
+        }
+        @media (min-width: 1024px) {
+            #adminSidebar {
+                width: 17rem; /* a bit roomier than the old 16rem (w-64) mobile-drawer width */
+            }
+        }
     </style>
 </head>
 
@@ -223,7 +244,7 @@
     <div id="sidebarOverlay" onclick="window.KambusAdmin.closeMobileSidebar()" class="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-90 hidden lg:hidden"></div>
 
     <!-- MAIN APP LAYOUT -->
-    <div class="flex-1 flex max-w-7xl w-full mx-auto">
+    <div id="appShell" class="flex-1 flex max-w-7xl w-full mx-auto">
 
         <!-- ========================================================= -->
         <!-- SIDEBAR NAVIGATION -->
