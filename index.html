@@ -215,7 +215,7 @@
                 setTimeout(() => {
                     if (data.role === "driver") {
                         window.location.href = "driver.html";
-                    } else if (data.role === "admin") {
+                    } else if (data.role === "admin" || data.role === "super_admin") {
                         window.location.href = "admin.html";
                     }
                 }, 150);
@@ -225,8 +225,10 @@
                 let displayTitle = "Invalid Credentials";
 
                 if (error.name === "TypeError" || error.message.includes("fetch") || error.message.includes("network")) {
-                    displayTitle = "Connection Error";
-                    displayMsg = "Please check your internet connection and try again.";
+                    displayTitle = window.navigator && window.navigator.onLine === false ? "No Internet" : "Connection Error";
+                    displayMsg = window.navigator && window.navigator.onLine === false
+                        ? "Please check your internet connection and try again."
+                        : "Unable to reach the server. Please check your network or server availability.";
                 }
 
                 notifyUser("danger", displayTitle, displayMsg);
