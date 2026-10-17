@@ -157,6 +157,20 @@
         }
     }
 
+    function timeAgo(isoString) {
+        if (!isoString) return "-";
+        const t = new Date(isoString).getTime();
+        if (Number.isNaN(t)) return "-";
+        const mins = Math.floor((Date.now() - t) / 60000);
+        if (mins < 1) return "just now";
+        if (mins < 60) return `${mins} min ago`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs} h ago`;
+        const days = Math.floor(hrs / 24);
+        if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+        return formatDateTime(isoString);
+    }
+
     function showToast(type, title, message) {
         const toast = document.createElement("div");
         toast.className = `fixed bottom-5 right-5 z-[9999] max-w-sm w-full p-4 rounded border flex items-start gap-3 transition-all duration-300 transform translate-y-2 opacity-0 ${
@@ -525,6 +539,11 @@
         document.getElementById("statTravellingToday").textContent = "--";
         document.getElementById("statTotalRoutes").textContent = "--";
         document.getElementById("statTotalStops").textContent = "--";
+        ["statActiveHint", "statOfflineHint", "statTravellingHint", "dashboardAlertCount", "dashboardUpdatedAt"].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = "";
+        });
+        document.getElementById("kpiOfflineBuses")?.classList.remove("kpi-card--warn");
 
         const activeTripsContainer = document.getElementById("dashboardActiveTrips");
         if (activeTripsContainer) {
@@ -572,11 +591,27 @@
         setVal("statTotalRoutes", data.total_routes);
         setVal("statTotalStops", data.total_stops);
 
+        // Context under the numbers + semantic color for offline buses
+        const setText = (id, text) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        };
+        setText("statActiveHint", data.total_buses ? `of ${data.total_buses} buses` : "");
+        setText("statTravellingHint", data.total_students ? `of ${data.total_students} students` : "");
+        setText("statOfflineHint", data.offline_buses ? "Needs attention" : "");
+        document.getElementById("kpiOfflineBuses")?.classList.toggle("kpi-card--warn", Number(data.offline_buses) > 0);
+
         // Render Active Trips
         const activeTripsContainer = document.getElementById("dashboardActiveTrips");
         if (activeTripsContainer) {
             if (!data.active_trips || data.active_trips.length === 0) {
-                activeTripsContainer.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">No active trips currently in transit.</div>`;
+                activeTripsContainer.innerHTML = `
+                    <div class="empty-state">
+                        <span class="empty-icon"><svg aria-hidden="true"><use href="icons.svg#icon-bus"/></svg></span>
+                        <p class="empty-title">No buses on the road right now</p>
+                        <p class="empty-sub">Trips show up here as soon as a driver starts one.</p>
+                        <button type="button" class="empty-cta" onclick="window.KambusAdmin.showSection('today-operations')">Open today's operations</button>
+                    </div>`;
             } else {
                 activeTripsContainer.innerHTML = data.active_trips.map(trip => `
                     <div class="p-3 bg-slate-50 border border-slate-200/80 rounded flex items-center justify-between gap-2">
@@ -600,21 +635,38 @@
         // Render Recent Alerts
         const recentAlertsContainer = document.getElementById("dashboardRecentAlerts");
         if (recentAlertsContainer && data.recent_alerts) {
+            const unreadCount = data.recent_alerts.filter(a => a.is_read === false).length;
+            setText("dashboardAlertCount", unreadCount ? `${unreadCount} new` : "");
+
             if (data.recent_alerts.length === 0) {
-                recentAlertsContainer.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">No recent alerts logged.</div>`;
+                recentAlertsContainer.innerHTML = `<div class="empty-state"><p class="empty-title">All clear</p><p class="empty-sub">No operational alerts have been logged.</p></div>`;
             } else {
-                recentAlertsContainer.innerHTML = data.recent_alerts.slice(0, 4).map(alert => `
-                    <div class="py-2.5 flex items-start justify-between gap-3 text-xs">
-                        <div class="min-w-0">
-                            <div class="flex items-center gap-1.5">
-                                <span class="w-4 h-4 shrink-0 flex items-center justify-center">${alert.type === 'emergency_sos' ? '<svg class="w-4 h-4 text-danger"><use href="icons.svg#icon-alert"/></svg>' : '<svg class="w-4 h-4 text-warn"><use href="icons.svg#icon-alert"/></svg>'}</span>
-                                <span class="font-bold text-slate-900 truncate">${escapeHtml(alert.title)}</span>
+                recentAlertsContainer.innerHTML = data.recent_alerts.slice(0, 4).map(alert => {
+                    const sev = alert.type === "emergency_sos" ? "high" : (alert.type === "detour_alert" ? "med" : "info");
+                    const chip = { high: "Emergency", med: "Detour", info: "Notice" }[sev];
+                    const unread = alert.is_read === false;
+                    const ageMs = Date.now() - new Date(alert.created_at).getTime();
+                    const stale = !unread && sev !== "high" && ageMs > 24 * 60 * 60 * 1000;
+                    const meta = [
+                        `<span title="${formatDateTime(alert.created_at)}">${timeAgo(alert.created_at)}</span>`,
+                        alert.bus_number ? `Bus ${escapeHtml(alert.bus_number)}` : "",
+                        alert.driver_name ? `Driver ${escapeHtml(alert.driver_name)}` : ""
+                    ].filter(Boolean).join(" &middot; ");
+                    const canAck = unread && alert.id != null;
+                    return `
+                        <div class="alert-row alert-row--${sev}${stale ? " alert-row--stale" : ""}">
+                            <div class="min-w-0">
+                                <div class="alert-head">
+                                    ${unread ? '<span class="alert-dot" title="Not yet acknowledged"></span>' : ""}
+                                    <span class="alert-title">${escapeHtml(alert.title)}</span>
+                                    <span class="alert-chip">${chip}</span>
+                                </div>
+                                <p class="alert-msg">${escapeHtml(alert.message)}</p>
+                                <p class="alert-meta">${meta}</p>
                             </div>
-                            <p class="text-slate-500 text-[11px] truncate mt-0.5">${escapeHtml(alert.message)}</p>
-                        </div>
-                        <span class="text-[10px] text-slate-400 shrink-0">${formatDateTime(alert.created_at)}</span>
-                    </div>
-                `).join("");
+                            ${canAck ? `<button type="button" class="alert-ack" onclick="window.KambusAdmin.acknowledgeAlert(${Number(alert.id)})">Acknowledge</button>` : ""}
+                        </div>`;
+                }).join("");
             }
         }
     }
@@ -626,17 +678,24 @@
         }
 
         if (!window.__opsDashboardLoadedFromLogin) {
+            window.__opsDashboardLoadedFromLogin = true;
             const initialOps = getInitialOpsDashboard();
             if (initialOps) {
-                window.__opsDashboardLoadedFromLogin = true;
+                // Paint the sign-in snapshot instantly, then fall through and fetch
+                // fresh data. Previously this returned early, so Refresh kept
+                // re-showing the same stale snapshot from localStorage.
                 renderDashboardData(initialOps);
-                return;
+                localStorage.removeItem("kambus_ops_dashboard");
             }
         }
 
         try {
             const data = await apiRequest("/admin/dashboard");
             renderDashboardData(data);
+            const stamp = document.getElementById("dashboardUpdatedAt");
+            if (stamp) {
+                stamp.textContent = "Updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+            }
         } catch (error) {
             console.error("Dashboard load failed:", error);
             showToast("error", "Error", "Could not refresh overview stats.");
